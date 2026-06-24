@@ -69,7 +69,7 @@ def connect():
     password = env.get("WRDS_PASSWORD") or os.environ.get("WRDS_PASSWORD")
 
     if username and password:
-        print(f"Connexion WRDS en tant que '{username}'...")
+        print("Connexion WRDS (identifiants depuis .env.local)...")
         return wrds.Connection(wrds_username=username, wrds_password=password)
     print("Connexion WRDS (identifiants interactifs)...")
     return wrds.Connection()
