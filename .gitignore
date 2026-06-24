@@ -1,0 +1,41 @@
+# Anciens notebooks et documents de recherche, conservés hors dépôt
+artefact/
+
+# Données mises en cache (régénérées par le pipeline, jamais versionnées)
+data/cache/
+*.parquet
+
+# Logs d'exécution du pipeline
+results/*.log
+
+# Notebooks — artefacts
+.ipynb_checkpoints/
+.virtual_documents/
+.jupyter/
+anaconda_projects/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+venv/
+.venv/
+env/
+
+# OS / éditeurs
+.DS_Store
+.idea/
+.vscode/
+
+# Identifiants WRDS / clés API — ne jamais committer
+.env
+.env.local
+.env.*.local
+.pgpass
+*.secret
