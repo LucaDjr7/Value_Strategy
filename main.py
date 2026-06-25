@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Pipeline complet de la stratégie Value GARP — orchestrateur par étapes.
+"""Full Value GARP strategy pipeline — stage-by-stage orchestrator.
 
 Usage
 -----
-    python main.py                 # fetch WRDS, met en cache, exécute tout
-    python main.py --use-cache     # repart du cache parquet (sans WRDS)
-    python main.py --no-plots      # saute la génération des figures
+    python main.py                 # fetch WRDS, cache, run everything
+    python main.py --use-cache     # start from the parquet cache (no WRDS)
+    python main.py --no-plots      # skip figure generation
 
-Étapes : data → signaux (IS/OOS) → backtest → facteurs FF → ML régime →
-short dynamique → figures. Toutes les sorties vont dans ``results/``.
+Stages: data -> signals (IS/OOS) -> backtest -> FF factors -> ML regime ->
+dynamic short -> figures. All outputs go to ``results/``.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore")
 
-# Permet `python main.py` sans installation (ajoute src/ au path)
+# Allow `python main.py` without installation (adds src/ to the path)
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 import pandas as pd  # noqa: E402
@@ -34,19 +34,19 @@ from value_strategy.ml_regime import pipeline as ml_pipeline  # noqa: E402
 def run(use_cache: bool = False, make_plots: bool = True) -> None:
     config.ensure_dirs()
 
-    # ── Partie 1 : données (panel mis en cache avant le fetch ML) ─────────
+    # -- Part 1: data (panel cached before the ML fetch) --
     panel, df_comp, crsp_ml, macro = data_build.acquire_data(use_cache=use_cache)
 
-    # ── Partie 2 : signaux + backtest IS ──────────────────────────────────
-    print("\n" + "=" * 60 + "\n  PARTIE 2 — IN-SAMPLE (2003-2013)\n" + "=" * 60)
+    # -- Part 2: signals + IS backtest --
+    print("\n" + "=" * 60 + "\n  PART 2 — IN-SAMPLE (2003-2013)\n" + "=" * 60)
     panel_sm_is, filtered_is = signals.build_signals(panel, config.IS_START, config.IS_END)
     long_is, short_is, _ = pf.construct_portfolios(filtered_is, config.IS_START, config.IS_END)
     perf_is, costs_is = pf.compute_performance(
         panel_sm_is, long_is, short_is, config.IS_START, config.IS_END,
     )
 
-    # ── Partie 3 : signaux + backtest OOS + facteurs ──────────────────────
-    print("\n" + "=" * 60 + "\n  PARTIE 3 — OUT-OF-SAMPLE (2014-2024)\n" + "=" * 60)
+    # -- Part 3: signals + OOS backtest + factors --
+    print("\n" + "=" * 60 + "\n  PART 3 — OUT-OF-SAMPLE (2014-2024)\n" + "=" * 60)
     panel_sm_oos, filtered_oos = signals.build_signals(panel, config.OOS_START, config.OOS_END)
     long_oos, short_oos, _ = pf.construct_portfolios(filtered_oos, config.OOS_START, config.OOS_END)
     perf_oos, costs_oos = pf.compute_performance(
@@ -58,26 +58,26 @@ def run(use_cache: bool = False, make_plots: bool = True) -> None:
         perf_is, perf_oos, ff5, mom_ff, costs_is, costs_oos,
     )
 
-    # ── Partie 4 : détection ML des régimes ───────────────────────────────
+    # -- Part 4: ML regime detection --
     ml = ml_pipeline.run_ml_regime(crsp_ml, df_comp, macro)
 
-    # ── Partie 5 : short dynamique ────────────────────────────────────────
+    # -- Part 5: dynamic short --
     ff = factors.download_ff_factors()
     perf_h, summary = dynamic_short.build_dynamic_short(perf_oos, ml["signals_df"], costs_oos)
     perf_h, metrics = dynamic_short.attach_ff_and_metrics(perf_h, ff)
     ff4_results = dynamic_short.ff4_regression(perf_h, ff)
     reports.print_dynamic_short_verdict(perf_h, metrics, ff4_results, summary, costs_oos)
 
-    # ── Diagnostic : durées de détention ──────────────────────────────────
-    print("\nDurées de détention moyennes :")
+    # -- Diagnostic: holding durations --
+    print("\nAverage holding durations:")
     for label, snaps in [("LONG IS", long_is), ("SHORT IS", short_is),
                          ("LONG OOS", long_oos), ("SHORT OOS", short_oos)]:
         avg, med, n = pf.holding_durations(snaps)
-        print(f"  {label:>10s} : moyenne={avg:.1f} mois  médiane={med:.1f} mois  (n={n})")
+        print(f"  {label:>10s}: mean={avg:.1f} months  median={med:.1f} months  (n={n})")
 
-    # ── Figures ───────────────────────────────────────────────────────────
+    # -- Figures --
     if make_plots:
-        print("\n" + "=" * 60 + "\n  GÉNÉRATION DES FIGURES\n" + "=" * 60)
+        print("\n" + "=" * 60 + "\n  FIGURE GENERATION\n" + "=" * 60)
         plots.setup_style()
         plots.plot_cumulative_wealth(perf_is, perf_oos, ff5)
         plots.plot_rolling_sharpe(perf_is, perf_oos, ff5)
@@ -91,15 +91,15 @@ def run(use_cache: bool = False, make_plots: bool = True) -> None:
         plots.plot_final_comparison(perf_is, perf_oos, perf_h, ff5,
                                     stats_is, stats_oos, metrics["adj"])
 
-    print("\n✓ Pipeline terminé. Résultats dans results/.")
+    print("\nPipeline finished. Results in results/.")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pipeline stratégie Value GARP")
+    parser = argparse.ArgumentParser(description="Value GARP strategy pipeline")
     parser.add_argument("--use-cache", action="store_true",
-                        help="repart du cache parquet sans connexion WRDS")
+                        help="start from the parquet cache without a WRDS connection")
     parser.add_argument("--no-plots", action="store_true",
-                        help="ne génère pas les figures")
+                        help="do not generate the figures")
     args = parser.parse_args()
     run(use_cache=args.use_cache, make_plots=not args.no_plots)
 

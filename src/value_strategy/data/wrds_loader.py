@@ -1,9 +1,8 @@
-"""Extraction des données brutes WRDS (CRSP, Compustat, delistings, lien CCM)
-et macro FRED.
+"""Raw WRDS data extraction (CRSP, Compustat, delistings, CCM link) and FRED
+macro data.
 
-Toutes les requêtes SQL sont reproduites à l'identique du notebook d'origine.
-Chaque fonction prend une connexion ``wrds.Connection`` ouverte (voir
-:func:`connect`).
+All SQL queries are reproduced exactly from the original notebook. Each
+function takes an open ``wrds.Connection`` (see :func:`connect`).
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 # ----------------------------------------------------------------------------
-# Détection des dépendances optionnelles pour la macro FRED
+# Detection of optional dependencies for FRED macro data
 # ----------------------------------------------------------------------------
 try:
     from pandas_datareader import data as pdr
@@ -28,12 +27,12 @@ except ImportError:
 
 
 # ----------------------------------------------------------------------------
-# 1.1  Connexion WRDS
+# 1.1  WRDS connection
 # ----------------------------------------------------------------------------
 def _load_env_local() -> dict:
-    """Parse un fichier .env.local à la racine du projet (KEY=VALUE par ligne).
+    """Parse a .env.local file at the project root (KEY=VALUE per line).
 
-    Jamais loggé. Les guillemets entourant la valeur sont retirés.
+    Never logged. Quotes around the value are stripped.
     """
     from .. import config
 
@@ -51,14 +50,14 @@ def _load_env_local() -> dict:
 
 
 def connect():
-    """Ouvre une connexion WRDS.
+    """Open a WRDS connection.
 
-    Cherche les identifiants dans cet ordre :
-      1. fichier ``.env.local`` (WRDS_USERNAME / WRDS_PASSWORD),
-      2. variables d'environnement (WRDS_USERNAME / WRDS_PASSWORD),
-      3. sinon, demande interactive de la librairie ``wrds``.
+    Looks for credentials in this order:
+      1. a ``.env.local`` file (WRDS_USERNAME / WRDS_PASSWORD),
+      2. environment variables (WRDS_USERNAME / WRDS_PASSWORD),
+      3. otherwise, the ``wrds`` library's interactive prompt.
 
-    Le mot de passe n'est jamais affiché ni journalisé.
+    The password is never printed or logged.
     """
     import os
 
@@ -69,18 +68,18 @@ def connect():
     password = env.get("WRDS_PASSWORD") or os.environ.get("WRDS_PASSWORD")
 
     if username and password:
-        print("Connexion WRDS (identifiants depuis .env.local)...")
+        print("WRDS connection (credentials from .env.local)...")
         return wrds.Connection(wrds_username=username, wrds_password=password)
-    print("Connexion WRDS (identifiants interactifs)...")
+    print("WRDS connection (interactive credentials)...")
     return wrds.Connection()
 
 
 # ----------------------------------------------------------------------------
-# 1.2  Compustat annuel
+# 1.2  Annual Compustat
 #
-#   Firmes industrielles US (indfmt = INDL), 1997-2025. On démarre en 1997
-#   pour avoir >= 3 ans d'historique avant 2000 afin d'initialiser les stocks
-#   KC et OC. Filtres : sale > 0, at > 0, ceq > 0.
+#   US industrial firms (indfmt = INDL), 1997-2025. We start in 1997 to have
+#   >= 3 years of history before 2000 to initialize the KC and OC stocks.
+#   Filters: sale > 0, at > 0, ceq > 0.
 # ----------------------------------------------------------------------------
 COMPUSTAT_QUERY = """
     SELECT
@@ -103,19 +102,19 @@ COMPUSTAT_QUERY = """
 
 
 def load_compustat(db) -> pd.DataFrame:
-    """Compustat annuel nettoyé (déduplication gvkey/fyear)."""
+    """Cleaned annual Compustat (deduplicated on gvkey/fyear)."""
     df = db.raw_sql(COMPUSTAT_QUERY, date_cols=["datadate"])
     df = df.drop_duplicates(["gvkey", "fyear"])
     df = df.sort_values(["gvkey", "datadate"]).reset_index(drop=True)
-    print(f"Compustat : {df.shape[0]:,} obs — {df['gvkey'].nunique():,} firmes")
+    print(f"Compustat: {df.shape[0]:,} obs — {df['gvkey'].nunique():,} firms")
     return df
 
 
 # ----------------------------------------------------------------------------
-# 1.3  CRSP mensuel
+# 1.3  Monthly CRSP
 #
-#   Actions ordinaires US (shrcd 10/11), NYSE/AMEX/NASDAQ (exchcd 1/2/3).
-#   Volume dollar de juin et décembre (rebalancement semestriel).
+#   US common stocks (shrcd 10/11), NYSE/AMEX/NASDAQ (exchcd 1/2/3).
+#   Dollar volume for June and December (semi-annual rebalancing).
 # ----------------------------------------------------------------------------
 CRSP_QUERY = """
     SELECT
@@ -156,15 +155,15 @@ CRSP_QUERY = """
 
 
 def load_crsp(db) -> pd.DataFrame:
-    """CRSP mensuel (prix, rendements, volume dollar semestriel)."""
+    """Monthly CRSP (price, returns, semi-annual dollar volume)."""
     df = db.raw_sql(CRSP_QUERY, date_cols=["date"])
     df["date"] = df["date"] + pd.offsets.MonthEnd(0)
-    print(f"CRSP : {df.shape[0]:,} obs — {df['permno'].nunique():,} titres")
+    print(f"CRSP: {df.shape[0]:,} obs — {df['permno'].nunique():,} stocks")
     return df
 
 
 # ----------------------------------------------------------------------------
-# 1.4  Delistings — correction du survivorship bias (Shumway 2001)
+# 1.4  Delistings — survivorship bias correction (Shumway 2001)
 # ----------------------------------------------------------------------------
 DELIST_QUERY = """
     SELECT permno, dlstdt, dlret, dlstcd, dlprc
@@ -174,18 +173,18 @@ DELIST_QUERY = """
 
 
 def apply_delistings(db, df_crsp: pd.DataFrame) -> pd.DataFrame:
-    """Intègre les rendements de delisting dans le panel CRSP.
+    """Integrate delisting returns into the CRSP panel.
 
-    a) Delistings directs : date delisting = date msf -> merge direct.
-    b) Orphan delistings : delisting APRÈS la dernière observation msf
-       (gap <= 6 mois) -> rattaché à la dernière date dispo.
-    c) Nettoyage des rendements aberrants (ret < -1 -> NaN).
+    a) Direct delistings: delisting date = msf date -> direct merge.
+    b) Orphan delistings: delisting AFTER the last msf observation
+       (gap <= 6 months) -> attached to the last available date.
+    c) Cleaning of outlier returns (ret < -1 -> NaN).
     """
     df_crsp = df_crsp.copy()
     db_dl = db.raw_sql(DELIST_QUERY, date_cols=["dlstdt"])
     db_dl["date"] = db_dl["dlstdt"] + pd.offsets.MonthEnd(0)
 
-    # a) Delistings directs
+    # a) Direct delistings
     df_crsp = df_crsp.merge(
         db_dl[["permno", "date", "dlret", "dlstcd", "dlprc"]],
         on=["permno", "date"], how="left",
@@ -219,14 +218,14 @@ def apply_delistings(db, df_crsp: pd.DataFrame) -> pd.DataFrame:
             columns=["dlret_orphan", "dlstcd_orphan", "dlprc_orphan"], inplace=True,
         )
 
-    # Nettoyage rendements aberrants
+    # Clean outlier returns
     df_crsp["ret"] = pd.to_numeric(df_crsp["ret"], errors="coerce")
     df_crsp.loc[df_crsp["ret"] < -1, "ret"] = np.nan
     return df_crsp
 
 
 # ----------------------------------------------------------------------------
-# 1.5  Table de lien CCM (gvkey <-> permno)
+# 1.5  CCM link table (gvkey <-> permno)
 # ----------------------------------------------------------------------------
 LINK_QUERY = """
     SELECT gvkey, lpermno AS permno, linkdt, linkenddt
@@ -237,16 +236,16 @@ LINK_QUERY = """
 
 
 def load_ccm_link(db) -> pd.DataFrame:
-    """Table de lien Compustat-CRSP (liens primaires valides)."""
+    """Compustat-CRSP link table (valid primary links)."""
     df = db.raw_sql(LINK_QUERY, date_cols=["linkdt", "linkenddt"])
     df["linkenddt"] = df["linkenddt"].fillna(pd.Timestamp("2099-12-31"))
     df["permno"] = df["permno"].astype(float)
-    print(f"CCM liens : {df.shape[0]:,}")
+    print(f"CCM links: {df.shape[0]:,}")
     return df
 
 
 # ----------------------------------------------------------------------------
-# 4.0a  CRSP mensuel dédié au ML (volume natif pour TOUS les mois)
+# 4.0a  ML-dedicated monthly CRSP (native volume for ALL months)
 # ----------------------------------------------------------------------------
 ML_CRSP_QUERY = """
     SELECT
@@ -268,22 +267,22 @@ ML_CRSP_QUERY = """
 
 
 def load_crsp_ml(db) -> pd.DataFrame:
-    """CRSP mensuel avec volume natif tous les mois (features ML)."""
+    """Monthly CRSP with native volume for every month (ML features)."""
     df = db.raw_sql(ML_CRSP_QUERY, date_cols=["date"])
     df["date"] = df["date"] + pd.offsets.MonthEnd(0)
     vol_coverage = df.groupby("date")["vol"].apply(lambda x: x.notna().mean())
-    print(f"  CRSP ML : {df.shape[0]:,} obs | {df['permno'].nunique():,} titres "
-          f"| {df['date'].nunique()} mois")
-    print(f"  Couverture vol : {vol_coverage.mean():.1%} "
+    print(f"  CRSP ML: {df.shape[0]:,} obs | {df['permno'].nunique():,} stocks "
+          f"| {df['date'].nunique()} months")
+    print(f"  Volume coverage: {vol_coverage.mean():.1%} "
           f"(min {vol_coverage.min():.1%}, max {vol_coverage.max():.1%})")
     return df
 
 
 # ----------------------------------------------------------------------------
-# 4.0c  Macro FRED (avec fallback synthétique si inaccessible)
+# 4.0c  FRED macro (with synthetic fallback if unreachable)
 # ----------------------------------------------------------------------------
 def fetch_fred_macro(start: str = "2000-01-01", end: str = "2025-06-30") -> pd.DataFrame:
-    """Récupère les features macro FRED. Fallback synthétique si inaccessible."""
+    """Fetch FRED macro features. Synthetic fallback if unreachable."""
     print("[4.0c] Fetching FRED macro data...")
     fred_series = {
         "VIXCLS": "vix",
@@ -295,7 +294,7 @@ def fetch_fred_macro(start: str = "2000-01-01", end: str = "2025-06-30") -> pd.D
     }
     macro_df = None
 
-    # Tentative 1 : pandas_datareader
+    # Attempt 1: pandas_datareader
     if HAS_PDR:
         try:
             frames = {}
@@ -305,16 +304,16 @@ def fetch_fred_macro(start: str = "2000-01-01", end: str = "2025-06-30") -> pd.D
                     s.columns = [col_name]
                     frames[col_name] = s
                 except Exception as e:  # noqa: BLE001
-                    print(f"    ⚠ {fred_id}: {e}")
+                    print(f"    ! {fred_id}: {e}")
             if frames:
                 macro_df = pd.concat(frames.values(), axis=1)
                 macro_df.index.name = "date"
                 macro_df = macro_df.reset_index()
-                print(f"    ✓ {len(frames)} séries via pandas_datareader")
+                print(f"    OK {len(frames)} series via pandas_datareader")
         except Exception as e:  # noqa: BLE001
-            print(f"    ⚠ pandas_datareader failed: {e}")
+            print(f"    ! pandas_datareader failed: {e}")
 
-    # Tentative 2 : fredapi
+    # Attempt 2: fredapi
     if macro_df is None and HAS_FREDAPI:
         try:
             fred = Fred()
@@ -331,11 +330,11 @@ def fetch_fred_macro(start: str = "2000-01-01", end: str = "2025-06-30") -> pd.D
                 macro_df.index.name = "date"
                 macro_df = macro_df.reset_index()
         except Exception as e:  # noqa: BLE001
-            print(f"    ⚠ fredapi failed: {e}")
+            print(f"    ! fredapi failed: {e}")
 
-    # Fallback synthétique
+    # Synthetic fallback
     if macro_df is None:
-        print("    ⚠ Fallback synthétique")
+        print("    ! Synthetic fallback")
         dates = pd.date_range(start, end, freq="B")
         np.random.seed(99)
         n = len(dates)
@@ -368,5 +367,5 @@ def fetch_fred_macro(start: str = "2000-01-01", end: str = "2025-06-30") -> pd.D
     macro_df["date"] = pd.to_datetime(macro_df["date"])
     macro_df = macro_df.set_index("date").resample("ME").mean().reset_index()
     macro_df = macro_df.ffill().bfill()
-    print(f"    Macro panel : {len(macro_df)} mois, cols : {list(macro_df.columns[1:])}")
+    print(f"    Macro panel: {len(macro_df)} months, cols: {list(macro_df.columns[1:])}")
     return macro_df

@@ -1,13 +1,13 @@
-"""Partie 3 — Facteurs Fama-French et statistiques de performance.
+"""Part 3 — Fama-French factors and performance statistics.
 
-Téléchargement direct depuis la Kenneth French Data Library, puis :
-  - statistiques de performance (Sharpe, drawdown, VaR, t-stat...)
-  - alpha FF4 (MKT + SMB + HML + MOM) avec t-stat
-  - information ratio vs HML passif
+Direct download from the Kenneth French Data Library, then:
+  - performance statistics (Sharpe, drawdown, VaR, t-stat...)
+  - FF4 alpha (MKT + SMB + HML + MOM) with t-stat
+  - information ratio vs passive HML
 
-Deux chargeurs cohabitent car ils alimentent des étapes différentes :
-``load_ff_factors`` (parties 3-4, format ``ff5`` + ``mom_ff``) et
-``download_ff_factors`` (partie 5, format ``ff`` à plat avec ``Mkt-RF``).
+Two loaders coexist because they feed different steps:
+``load_ff_factors`` (parts 3-4, ``ff5`` + ``mom_ff`` format) and
+``download_ff_factors`` (part 5, flat ``ff`` format with ``Mkt-RF``).
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ MOM_URL = ("https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
 
 
 # ----------------------------------------------------------------------------
-# 3.4  Chargement FF5 + momentum (format ff5 / mom_ff)
+# 3.4  Load FF5 + momentum (ff5 / mom_ff format)
 # ----------------------------------------------------------------------------
 def _load_ff_factor(url: str):
     r = requests.get(url, timeout=30)
@@ -46,10 +46,10 @@ def _load_ff_factor(url: str):
 
 
 def load_ff_factors():
-    """Charge FF5 (MKT, SMB, HML, RMW, CMA, RF) et MOM. Renvoie (ff5, mom_ff).
+    """Load FF5 (MKT, SMB, HML, RMW, CMA, RF) and MOM. Returns (ff5, mom_ff).
 
-    En cas d'échec réseau, renvoie ``(None, None)`` (le reste du pipeline gère
-    l'absence de facteurs).
+    On a network failure, returns ``(None, None)`` (the rest of the pipeline
+    handles missing factors).
     """
     try:
         ff5 = pd.DataFrame(_load_ff_factor(FF5_URL))
@@ -64,18 +64,18 @@ def load_ff_factors():
             + pd.offsets.MonthEnd(0)
         mom_ff = mom_ff.set_index("date") / 100
 
-        print("Facteurs FF chargés avec succès")
+        print("FF factors loaded successfully")
         return ff5, mom_ff
     except Exception as e:  # noqa: BLE001
-        print(f"FF non disponibles : {e}")
+        print(f"FF factors unavailable: {e}")
         return None, None
 
 
 # ----------------------------------------------------------------------------
-# 5.2a  Chargement FF à plat (format ff avec Mkt-RF / Mom) — utilisé en Partie 5
+# 5.2a  Flat FF loader (ff format with Mkt-RF / Mom) — used in Part 5
 # ----------------------------------------------------------------------------
 def download_ff_factors() -> pd.DataFrame:
-    """Charge FF5 + momentum dans un seul DataFrame à plat (colonne ``date``)."""
+    """Load FF5 + momentum into a single flat DataFrame (``date`` column)."""
     def _fetch_ff(url):
         r = requests.get(url)
         z = zipfile.ZipFile(io.BytesIO(r.content))
@@ -114,7 +114,7 @@ def download_ff_factors() -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------------
-# 3.5  Statistiques de performance et régressions
+# 3.5  Performance statistics and regressions
 # ----------------------------------------------------------------------------
 STAT_KEYS = [
     "Ann. Return", "Ann. Volatility", "Sharpe", "Max Drawdown", "Calmar",
@@ -123,9 +123,9 @@ STAT_KEYS = [
 
 
 def performance_stats(series: pd.Series, ff5: pd.DataFrame | None = None) -> dict:
-    """Statistiques de performance d'une série de rendements mensuels.
+    """Performance statistics for a series of monthly returns.
 
-    Le Sharpe utilise un taux sans risque dynamique (``ff5['RF']``) si fourni.
+    The Sharpe ratio uses a dynamic risk-free rate (``ff5['RF']``) if provided.
     """
     s = series.dropna()
     if len(s) < 12:
@@ -166,7 +166,7 @@ def performance_stats(series: pd.Series, ff5: pd.DataFrame | None = None) -> dic
 
 
 def alpha_ff4(serie: pd.Series, ff5, mom_ff):
-    """Alpha FF4 annualisé (MKT+SMB+HML+MOM), t-stat, R². Renvoie (alpha, t, r2)."""
+    """Annualized FF4 alpha (MKT+SMB+HML+MOM), t-stat, R-squared. Returns (alpha, t, r2)."""
     if ff5 is None:
         return np.nan, np.nan, np.nan
     ff = ff5[["MKT", "SMB", "HML"]].join(mom_ff[["MOM"]], how="inner")
@@ -188,7 +188,7 @@ def alpha_ff4(serie: pd.Series, ff5, mom_ff):
 
 
 def info_ratio_vs_hml(serie: pd.Series, ff5) -> float:
-    """Information ratio annualisé vs HML passif (alpha résiduel / tracking)."""
+    """Annualized information ratio vs passive HML (residual alpha / tracking)."""
     if ff5 is None:
         return np.nan
     hml = ff5["HML"].reindex(serie.index)
@@ -200,14 +200,14 @@ def info_ratio_vs_hml(serie: pd.Series, ff5) -> float:
 
 
 def compute_metrics(monthly_ret: pd.Series, rf_series: pd.Series | None = None) -> dict:
-    """Métriques compactes (CAGR, Vol, Sharpe, MaxDD, Calmar, Sortino...).
+    """Compact metrics (CAGR, Vol, Sharpe, MaxDD, Calmar, Sortino...).
 
-    Utilisé en Partie 5 pour comparer short statique vs dynamique.
+    Used in Part 5 to compare static vs dynamic short.
     """
     r = monthly_ret.dropna()
     n = len(r)
     keys = ["CAGR", "Vol", "Sharpe", "MaxDD", "Calmar", "Sortino", "Skew",
-            "Hit Rate", "N mois"]
+            "Hit Rate", "N months"]
     if n < 12:
         return {k: np.nan for k in keys}
     cumul = (1 + r).cumprod()
@@ -229,4 +229,4 @@ def compute_metrics(monthly_ret: pd.Series, rf_series: pd.Series | None = None) 
     sortino = cagr / (downside + 1e-10)
     return {"CAGR": cagr, "Vol": vol, "Sharpe": sharpe, "MaxDD": maxdd,
             "Calmar": calmar, "Sortino": sortino, "Skew": r.skew(),
-            "Hit Rate": (r > 0).mean(), "N mois": n}
+            "Hit Rate": (r > 0).mean(), "N months": n}

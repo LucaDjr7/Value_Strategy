@@ -1,8 +1,8 @@
-"""1.6  Merge CRSP et Compustat en panel mensuel (anti look-ahead bias).
+"""1.6  Merge CRSP and Compustat into a monthly panel (anti look-ahead bias).
 
-Logique anti-look-ahead : ``avail_date = datadate + 6 mois`` (délai de
-publication), puis ``merge_asof`` backward — chaque mois CRSP récupère le
-dernier compte Compustat disponible, jamais un compte futur.
+Anti-look-ahead logic: ``avail_date = datadate + 6 months`` (publication lag),
+then a backward ``merge_asof`` — each CRSP month picks up the latest available
+Compustat record, never a future one.
 """
 
 from __future__ import annotations
@@ -22,13 +22,13 @@ def merge_panel(
     df_comp: pd.DataFrame,
     df_link: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Fusionne CRSP (lié via CCM) et Compustat en panel mensuel.
+    """Merge CRSP (linked via CCM) and Compustat into a monthly panel.
 
     Parameters
     ----------
-    df_crsp : CRSP mensuel avec delistings déjà intégrés.
-    df_comp : Compustat annuel.
-    df_link : table de lien CCM.
+    df_crsp : monthly CRSP with delistings already integrated.
+    df_comp : annual Compustat.
+    df_link : CCM link table.
     """
     df_comp = df_comp.copy()
     df_crsp = df_crsp.copy()
@@ -64,5 +64,5 @@ def merge_panel(
     )
     panel = panel.dropna(subset=["fyear"]).copy()
 
-    print(f"Panel brut : {panel.shape[0]:,} obs — {panel['permno'].nunique():,} titres")
+    print(f"Raw panel: {panel.shape[0]:,} obs — {panel['permno'].nunique():,} stocks")
     return panel

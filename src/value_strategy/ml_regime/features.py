@@ -1,12 +1,12 @@
 """4.1  Feature engineering V3 (CRSP + Compustat + FRED).
 
-Construit un panel marché mensuel (~300 mois) à partir de l'agrégation
-cross-sectionnelle des titres, détrendé en z-scores rolling 24 mois :
-  - CRSP : Amihud, turnover, zero_ret, rvol, dispersion, skewness...
-  - Compustat : leverage, cash ratio (agrégat annuel)
-  - FRED : vix, credit_spread, term_spread, ted_spread...
-  - Interactions : VIX × Amihud, Credit × Rvol
-  - Momentum : variations (chg1, chg3) et moyennes mobiles (ma3)
+Builds a monthly market panel (~300 months) from the cross-sectional
+aggregation of stocks, detrended into 24-month rolling z-scores:
+  - CRSP: Amihud, turnover, zero_ret, rvol, dispersion, skewness...
+  - Compustat: leverage, cash ratio (annual aggregate)
+  - FRED: vix, credit_spread, term_spread, ted_spread...
+  - Interactions: VIX x Amihud, Credit x Rvol
+  - Momentum: changes (chg1, chg3) and moving averages (ma3)
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ DETREND_WINDOW = 24
 def compute_liquidity_features_v3(
     crsp: pd.DataFrame, comp: pd.DataFrame, macro: pd.DataFrame,
 ):
-    """Construit le panel marché et la liste des features. Renvoie (mkt, cols)."""
+    """Build the market panel and the feature list. Returns (mkt, cols)."""
     print("\n[STEP 1] Feature engineering V3...")
     df = crsp.copy()
     for col in ["ret", "retx", "prc", "vol", "shrout"]:
@@ -28,9 +28,9 @@ def compute_liquidity_features_v3(
             df[col] = pd.to_numeric(df[col], errors="coerce").astype("float64")
     n_before = len(df)
     df = df.dropna(subset=["ret"]).copy()
-    print(f"  Dropped {n_before - len(df):,} lignes sans ret")
+    print(f"  Dropped {n_before - len(df):,} rows without ret")
 
-    # ── Métriques individuelles ───────────────────────────────────────────
+    # -- Individual metrics --
     df["abs_ret"] = df["ret"].abs()
     df["dollar_vol"] = df["prc"].abs() * df["vol"]
     df["dollar_vol"] = df["dollar_vol"].replace(0, np.nan)
@@ -41,7 +41,7 @@ def compute_liquidity_features_v3(
     df["zero_ret"] = (df["ret"] == 0).fillna(False).astype(int)
     df["neg_ret"] = (df["ret"] < 0).fillna(False).astype(int)
 
-    # ── Agrégation cross-sectionnelle -> panel marché ─────────────────────
+    # -- Cross-sectional aggregation -> market panel --
     mkt = df.groupby("date").agg(
         amihud_mkt=("amihud", "median"),
         turnover_mkt=("turnover", "median"),
@@ -56,13 +56,13 @@ def compute_liquidity_features_v3(
         ret_skewness=("ret", "skew"),
     ).reset_index()
     mkt = mkt.sort_values("date").reset_index(drop=True)
-    print(f"  Panel marché brut : {mkt.shape[0]} mois "
-          f"({mkt['date'].min().strftime('%Y-%m')} → "
+    print(f"  Raw market panel: {mkt.shape[0]} months "
+          f"({mkt['date'].min().strftime('%Y-%m')} -> "
           f"{mkt['date'].max().strftime('%Y-%m')})")
 
     mkt["log_dollar_vol"] = np.log1p(mkt["dollar_vol_mkt"])
 
-    # ── Features microstructure avancées ──────────────────────────────────
+    # -- Advanced microstructure features --
     mkt["d_ret"] = mkt["mkt_ret"].diff()
     mkt["roll_cov"] = mkt["d_ret"].rolling(12).apply(
         lambda x: np.cov(x[1:], x[:-1])[0, 1] if len(x) > 2 else np.nan, raw=True,
@@ -75,7 +75,7 @@ def compute_liquidity_features_v3(
         lambda x: pd.Series(x).autocorr() if len(x) > 2 else 0, raw=True,
     ).fillna(0)
 
-    # ── Agrégat Compustat annuel ──────────────────────────────────────────
+    # -- Annual Compustat aggregate --
     comp_clean = comp.dropna(subset=["dltt", "che", "at"]).copy()
     comp_clean = comp_clean[comp_clean["at"] > 0].copy()
     comp_agg = (
@@ -90,13 +90,13 @@ def compute_liquidity_features_v3(
     mkt["fyear"] = mkt["date"].dt.year
     mkt = mkt.merge(comp_agg, on="fyear", how="left")
 
-    # ── Merge macro FRED ──────────────────────────────────────────────────
+    # -- Merge FRED macro --
     macro_cols_available = [c for c in macro.columns if c != "date"]
     mkt = mkt.merge(macro, on="date", how="left")
     mkt[macro_cols_available] = mkt[macro_cols_available].ffill().bfill()
-    print(f"  Merged {len(macro_cols_available)} séries macro")
+    print(f"  Merged {len(macro_cols_available)} macro series")
 
-    # ── Détrendage (z-score rolling 24 mois) ──────────────────────────────
+    # -- Detrending (24-month rolling z-score) --
     raw_features = [
         "amihud_mkt", "turnover_mkt", "zero_ret_pct", "rvol_mkt",
         "log_dollar_vol", "ret_dispersion", "pct_neg_ret",
@@ -114,7 +114,7 @@ def compute_liquidity_features_v3(
         mkt[zcol] = ((mkt[col] - rm) / rs).fillna(0)
         detrended_features.append(zcol)
 
-    # ── Features momentum (variations & moyennes mobiles) ─────────────────
+    # -- Momentum features (changes & moving averages) --
     momentum_cols = ["amihud_mkt_z", "turnover_mkt_z", "rvol_mkt_z", "zero_ret_pct_z"]
     for mc in macro_cols_available:
         zmc = f"{mc}_z"
@@ -133,13 +133,13 @@ def compute_liquidity_features_v3(
         mkt[ma3] = mkt[col].rolling(3).mean()
         momentum_features.append(ma3)
 
-    # ── Rendements marché multi-horizons ──────────────────────────────────
+    # -- Multi-horizon market returns --
     mkt["mkt_ret_3m"] = mkt["mkt_ret"].rolling(3).sum()
     mkt["mkt_ret_12m"] = mkt["mkt_ret"].rolling(12).sum()
     mkt["mkt_vol_3m"] = mkt["mkt_ret"].rolling(3).std()
     market_features = ["mkt_ret", "mkt_ret_3m", "mkt_ret_12m", "mkt_vol_3m"]
 
-    # ── Interactions ──────────────────────────────────────────────────────
+    # -- Interactions --
     interaction_features = []
     if "vix_z" in mkt.columns and "amihud_mkt_z" in mkt.columns:
         mkt["vix_x_amihud_z"] = mkt["vix_z"] * mkt["amihud_mkt_z"]
@@ -148,7 +148,7 @@ def compute_liquidity_features_v3(
         mkt["credit_x_rvol_z"] = mkt["credit_spread_z"] * mkt["rvol_mkt_z"]
         interaction_features.append("credit_x_rvol_z")
 
-    # ── Assemblage final ──────────────────────────────────────────────────
+    # -- Final assembly --
     feature_cols = (
         detrended_features + momentum_features + market_features + interaction_features
     )
@@ -156,5 +156,5 @@ def compute_liquidity_features_v3(
     mkt[numeric_cols] = mkt[numeric_cols].replace([np.inf, -np.inf], np.nan)
     mkt = mkt.dropna(subset=["amihud_mkt"]).reset_index(drop=True)
     feature_cols = [c for c in feature_cols if c in mkt.columns]
-    print(f"  Panel marché final : {mkt.shape[0]} mois | Features : {len(feature_cols)}")
+    print(f"  Final market panel: {mkt.shape[0]} months | Features: {len(feature_cols)}")
     return mkt, feature_cols

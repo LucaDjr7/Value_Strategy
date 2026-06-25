@@ -1,4 +1,4 @@
-"""Tests des fonctions pures de la détection de régime (sans WRDS)."""
+"""Tests of the pure regime-detection functions (no WRDS)."""
 
 import numpy as np
 import pandas as pd
@@ -9,15 +9,15 @@ from value_strategy.ml_regime.model import find_optimal_threshold
 
 
 def test_smooth_removes_short_episodes():
-    """Un épisode plus court que min_duration est effacé."""
-    regimes = np.array([0, 0, 1, 1, 0, 0, 0])  # épisode de 2 < min_duration=3
+    """An episode shorter than min_duration is removed."""
+    regimes = np.array([0, 0, 1, 1, 0, 0, 0])  # episode of 2 < min_duration=3
     out = smooth_regimes(regimes.copy(), min_duration=3, bridge_gap=0)
     assert out.tolist() == [0, 0, 0, 0, 0, 0, 0]
 
 
 def test_smooth_bridges_short_gap():
-    """Un trou court entre deux épisodes est comblé."""
-    regimes = np.array([1, 1, 1, 0, 1, 1, 1])  # trou de 1 <= bridge_gap=2
+    """A short gap between two episodes is filled."""
+    regimes = np.array([1, 1, 1, 0, 1, 1, 1])  # gap of 1 <= bridge_gap=2
     out = smooth_regimes(regimes.copy(), min_duration=1, bridge_gap=2)
     assert out.tolist() == [1, 1, 1, 1, 1, 1, 1]
 
@@ -30,16 +30,16 @@ def test_find_optimal_threshold_in_unit_interval():
 
 
 def test_label_regimes_guard_avoids_degenerate_split():
-    """Le garde-fou garantit un split non dégénéré (les deux régimes présents).
+    """The guard ensures a non-degenerate split (both regimes present).
 
-    Données synthétiques : un bloc contigu de stress (VIX élevé) minoritaire ;
-    quel que soit le clustering, la sortie doit contenir les deux régimes avec
-    une part minoritaire raisonnable.
+    Synthetic data: a contiguous minority block of stress (high VIX); whatever
+    the clustering, the output must contain both regimes with a reasonable
+    minority share.
     """
     rng = np.random.default_rng(0)
     n = 150
     stress = np.zeros(n)
-    stress[60:100] = 1  # bloc contigu de 40 mois
+    stress[60:100] = 1  # contiguous block of 40 months
     base = rng.normal(0, 0.3, n)
     mkt = pd.DataFrame({
         "vix_z": base + stress * 2.5,
@@ -52,7 +52,7 @@ def test_label_regimes_guard_avoids_degenerate_split():
     assert set(regimes.unique()) == {0.0, 1.0}
     minority = min(regimes.mean(), 1 - regimes.mean())
     assert minority >= 0.10
-    # Le régime actif (1) doit correspondre au VIX le plus élevé
+    # The active regime (1) must correspond to the highest VIX
     assert out.loc[out["regime"] == 1, "vix_z"].mean() > \
         out.loc[out["regime"] == 0, "vix_z"].mean()
 
@@ -60,7 +60,7 @@ def test_label_regimes_guard_avoids_degenerate_split():
 def test_estimate_borrow_fee_decreases_with_size():
     fees = [portfolio.estimate_borrow_fee(m)
             for m in [100, 600, 1500, 3000, 7000, 12000]]
-    assert fees == sorted(fees, reverse=True)  # plus gros = moins cher
+    assert fees == sorted(fees, reverse=True)  # bigger = cheaper
 
 
 def test_holding_durations_basic():
@@ -69,5 +69,5 @@ def test_holding_durations_basic():
                   pd.Timestamp("2011-06-30"))
     snaps = {d1: {1.0, 2.0}, d2: {1.0}, d3: {1.0}}
     avg, med, n = portfolio.holding_durations(snaps)
-    assert n == 2          # titre 2 (sort en d2) + titre 1 (actif jusqu'à d3)
+    assert n == 2          # stock 2 (exits at d2) + stock 1 (active until d3)
     assert avg > 0 and med > 0

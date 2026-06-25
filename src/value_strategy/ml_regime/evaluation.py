@@ -1,4 +1,4 @@
-"""4.4  Évaluation des modèles + feature importance (permutation)."""
+"""4.4  Model evaluation + feature importance (permutation)."""
 
 from __future__ import annotations
 
@@ -17,13 +17,13 @@ from sklearn.metrics import (
 
 
 def evaluate_models(results_df):
-    """Métriques OOS : Accuracy, Precision, Recall, F1, AUC, Brier."""
+    """OOS metrics: Accuracy, Precision, Recall, F1, AUC, Brier."""
     print("\n" + "=" * 60)
-    print("  COMPARAISON MODÈLES — Out-of-Sample V3")
+    print("  MODEL COMPARISON — Out-of-Sample V3")
     print("=" * 60)
 
     if len(results_df) == 0:
-        print("  ⚠ Aucune donnée OOS — évaluation impossible.")
+        print("  ! No OOS data — evaluation impossible.")
         return pd.DataFrame(columns=[
             "Accuracy", "Precision (stress)", "Recall (stress)",
             "F1 (stress)", "AUC-ROC", "Brier Score",
@@ -61,12 +61,12 @@ def evaluate_models(results_df):
 
     metrics_df = pd.DataFrame(metrics_list).set_index("Model")
     best = metrics_df["AUC-ROC"].idxmax()
-    print(f"\n  ★ Meilleur (AUC) : {best} ({metrics_df.loc[best, 'AUC-ROC']:.3f})")
+    print(f"\n  * Best (AUC): {best} ({metrics_df.loc[best, 'AUC-ROC']:.3f})")
     return metrics_df
 
 
 def compute_feature_importance(model, scaler, feature_cols, df):
-    """Permutation importance sur le dataset supervisé complet."""
+    """Permutation importance on the full supervised dataset."""
     print("\n[STEP 4b] Feature importance (permutation)...")
     X = scaler.transform(df[feature_cols].values)
     y = df["target"].values
@@ -78,7 +78,7 @@ def compute_feature_importance(model, scaler, feature_cols, df):
         "importance": result.importances_mean,
         "std": result.importances_std,
     }).sort_values("importance", ascending=False)
-    print("  Top 10 features :")
+    print("  Top 10 features:")
     for _, r in imp_df.head(10).iterrows():
-        print(f"    {r['feature']:<35s} {r['importance']:.4f} ± {r['std']:.4f}")
+        print(f"    {r['feature']:<35s} {r['importance']:.4f} +/- {r['std']:.4f}")
     return imp_df

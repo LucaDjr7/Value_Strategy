@@ -1,11 +1,11 @@
-"""Partie 5 — Réduction dynamique du short en junk rally.
+"""Part 5 — Dynamic short reduction during junk rallies.
 
-Quand le ML (Partie 4) détecte un régime d'euphorie, le poids du short passe de
-100 % à 50 % : ``LS_adjusted = LONG − w × SHORT`` avec w = 0.5 en euphoria,
-1.0 sinon. Coûts : transition (repositionnement de 50 % du short book) +
-borrow fee proportionnel au poids short.
+When the ML (Part 4) detects a euphoria regime, the short weight goes from
+100% to 50%: ``LS_adjusted = LONG - w * SHORT`` with w = 0.5 in euphoria,
+1.0 otherwise. Costs: transition (repositioning 50% of the short book) +
+borrow fee proportional to the short weight.
 
-Timing : signal au mois t -> appliqué au mois t+1.
+Timing: signal at month t -> applied at month t+1.
 """
 
 from __future__ import annotations
@@ -18,24 +18,24 @@ from .factors import compute_metrics
 
 
 def build_dynamic_short(perf_oos: pd.DataFrame, signals_df: pd.DataFrame, costs_oos: dict):
-    """Construit la série de performance avec short dynamique piloté par le ML.
+    """Build the performance series with the ML-driven dynamic short.
 
     Parameters
     ----------
-    perf_oos : performance OOS (index = date, colonnes LONG/SHORT/LS/LS_net).
-    signals_df : signaux ML (date, signal_gb, gb_prob).
-    costs_oos : dict de coûts OOS issu de ``portfolio.compute_performance``.
+    perf_oos : OOS performance (index = date, columns LONG/SHORT/LS/LS_net).
+    signals_df : ML signals (date, signal_gb, gb_prob).
+    costs_oos : OOS cost dict from ``portfolio.compute_performance``.
 
     Returns
     -------
-    perf_h : DataFrame mensuel enrichi (short_weight, LS_adjusted, LS_adj_net...).
+    perf_h : enriched monthly DataFrame (short_weight, LS_adjusted, LS_adj_net...).
     summary : dict {n_reduce, n_full, n_trans}.
     """
     print("=" * 60)
-    print("  PARTIE 5 — SHORT DYNAMIQUE PILOTÉ PAR LE ML")
+    print("  PART 5 — ML-DRIVEN DYNAMIC SHORT")
     print("=" * 60)
 
-    # ── 5.1a  Préparer perf_oos ───────────────────────────────────────────
+    # -- 5.1a  Prepare perf_oos
     perf_oos_df = perf_oos.copy()
     if "date" not in perf_oos_df.columns:
         perf_oos_df = perf_oos_df.reset_index()
@@ -48,8 +48,8 @@ def build_dynamic_short(perf_oos: pd.DataFrame, signals_df: pd.DataFrame, costs_
             perf_oos_df = perf_oos_df.rename(columns={perf_oos_df.columns[0]: "date"})
     perf_oos_df["date"] = pd.to_datetime(perf_oos_df["date"]) + pd.offsets.MonthEnd(0)
 
-    # ── 5.1b  Alignement signaux -> rendements (t -> t+1) ─────────────────
-    print("[5.1b] Alignement signaux ML → rendements OOS...")
+    # -- 5.1b  Align signals -> returns (t -> t+1)
+    print("[5.1b] Aligning ML signals -> OOS returns...")
     sig = signals_df[["date", "signal_gb", "gb_prob"]].copy()
     sig["date"] = pd.to_datetime(sig["date"]) + pd.offsets.MonthEnd(0)
     sig["apply_date"] = sig["date"] + pd.offsets.MonthEnd(1)
@@ -63,7 +63,7 @@ def build_dynamic_short(perf_oos: pd.DataFrame, signals_df: pd.DataFrame, costs_
     perf_h["gb_prob"] = perf_h["gb_prob"].fillna(0.0)
     perf_h = perf_h.sort_values("date").reset_index(drop=True)
 
-    # ── 5.1c  Short weight dynamique ──────────────────────────────────────
+    # -- 5.1c  Dynamic short weight
     perf_h["short_weight"] = np.where(
         perf_h["signal_gb"] == "SHORT_REDUCE",
         config.SHORT_WEIGHT_REDUCE,
@@ -71,7 +71,7 @@ def build_dynamic_short(perf_oos: pd.DataFrame, signals_df: pd.DataFrame, costs_
     )
     perf_h["LS_adjusted"] = perf_h["LONG"] - perf_h["short_weight"] * perf_h["SHORT"]
 
-    # ── 5.1d  Coûts ajustés ───────────────────────────────────────────────
+    # -- 5.1d  Adjusted costs
     perf_h["weight_change"] = perf_h["short_weight"].diff().abs().fillna(0)
     perf_h["transition_cost"] = (
         (perf_h["weight_change"] > 0).astype(float) * config.TC_PER_TRANSITION
@@ -90,27 +90,27 @@ def build_dynamic_short(perf_oos: pd.DataFrame, signals_df: pd.DataFrame, costs_
     )
     perf_h["LS_adj_net"] = perf_h["LS_adjusted"] - perf_h["cost_adj"]
 
-    # ── 5.1e  Résumé ──────────────────────────────────────────────────────
+    # -- 5.1e  Summary
     n_reduce = int((perf_h["short_weight"] == config.SHORT_WEIGHT_REDUCE).sum())
     n_full = int((perf_h["short_weight"] == config.SHORT_WEIGHT_FULL).sum())
     n_trans = int((perf_h["weight_change"] > 0).sum())
 
-    print(f"\n  Période : {perf_h['date'].min().strftime('%Y-%m')} → "
-          f"{perf_h['date'].max().strftime('%Y-%m')} ({len(perf_h)} mois)")
-    print(f"  Mois SHORT_REDUCE (50%) : {n_reduce} ({n_reduce / len(perf_h):.0%})")
-    print(f"  Mois FULL_SHORT (100%)  : {n_full} ({n_full / len(perf_h):.0%})")
-    print(f"  Transitions             : {n_trans}")
-    print(f"  Coût transitions total  : {perf_h['transition_cost'].sum() * 100:.2f}%")
+    print(f"\n  Period: {perf_h['date'].min().strftime('%Y-%m')} -> "
+          f"{perf_h['date'].max().strftime('%Y-%m')} ({len(perf_h)} months)")
+    print(f"  SHORT_REDUCE months (50%): {n_reduce} ({n_reduce / len(perf_h):.0%})")
+    print(f"  FULL_SHORT months (100%) : {n_full} ({n_full / len(perf_h):.0%})")
+    print(f"  Transitions              : {n_trans}")
+    print(f"  Total transition cost    : {perf_h['transition_cost'].sum() * 100:.2f}%")
 
     return perf_h, {"n_reduce": n_reduce, "n_full": n_full, "n_trans": n_trans}
 
 
 def attach_ff_and_metrics(perf_h: pd.DataFrame, ff: pd.DataFrame):
-    """Merge les facteurs FF et calcule les métriques comparées.
+    """Merge the FF factors and compute the compared metrics.
 
     Returns
     -------
-    perf_h (avec Mkt-RF, RF), metrics : dict {naked, adj, mkt}.
+    perf_h (with Mkt-RF, RF), metrics : dict {naked, adj, mkt}.
     """
     perf_h = perf_h.merge(ff[["date", "Mkt-RF", "RF"]], on="date", how="left")
     perf_h = perf_h.dropna(subset=["LS_net", "LS_adj_net"]).reset_index(drop=True)
@@ -125,7 +125,7 @@ def attach_ff_and_metrics(perf_h: pd.DataFrame, ff: pd.DataFrame):
 
 
 def ff4_regression(perf_h: pd.DataFrame, ff: pd.DataFrame) -> dict:
-    """Régression FF4 (OOS) sur les deux stratégies. Renvoie un dict de résultats."""
+    """FF4 regression (OOS) on both strategies. Returns a dict of results."""
     oos_ff = perf_h[["date", "LS_net", "LS_adj_net"]].merge(
         ff[["date", "Mkt-RF", "SMB", "HML", "Mom"]], on="date", how="inner",
     )
@@ -133,7 +133,7 @@ def ff4_regression(perf_h: pd.DataFrame, ff: pd.DataFrame) -> dict:
     X_oos_c = np.column_stack([np.ones(len(X_oos)), X_oos])
 
     ff4_results = {}
-    for name, col in [("Original", "LS_net"), ("Short dynamique", "LS_adj_net")]:
+    for name, col in [("Original", "LS_net"), ("Dynamic short", "LS_adj_net")]:
         y = oos_ff[col].values
         betas, _, _, _ = np.linalg.lstsq(X_oos_c, y, rcond=None)
         resid = y - X_oos_c @ betas

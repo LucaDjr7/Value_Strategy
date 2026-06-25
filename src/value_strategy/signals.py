@@ -1,19 +1,19 @@
-"""Partie 2/3 — Construction des signaux value + qualité + momentum.
+"""Part 2/3 — Building the value + quality + momentum signals.
 
-Ce module factorise le pipeline de signaux appliqué **à l'identique** en
-in-sample (2003-2013) et out-of-sample (2014-2024). Étapes :
+This module factors out the signal pipeline applied **identically** in-sample
+(2003-2013) and out-of-sample (2014-2024). Steps:
 
-  2.3  variables de valorisation (B/M ajusté intangibles)
-  2.4  signal value avec neutralisation sectorielle
-  2.5  ratios de qualité fondamentale (QARP)
-  2.6  univers small/mid caps + winsorisation
-  2.7  momentum 6 mois (skip-2)
-  2.8  score qualité composite
+  2.3  valuation variables (intangible-adjusted B/M)
+  2.4  value signal with sector neutralization
+  2.5  fundamental quality ratios (QARP)
+  2.6  small/mid cap universe + winsorization
+  2.7  6-month momentum (skip-2)
+  2.8  composite quality score
 
-``build_signals(panel, start, end)`` renvoie ``(panel_sm, panel_filtered)`` où
-``panel_sm`` est l'univers small/mid (support des rendements et coûts) et
-``panel_filtered`` l'univers final éligible (extrêmes value/growth, qualité
-calculable).
+``build_signals(panel, start, end)`` returns ``(panel_sm, panel_filtered)``,
+where ``panel_sm`` is the small/mid universe (support for returns and costs)
+and ``panel_filtered`` the final eligible universe (value/growth extremes,
+computable quality).
 """
 
 from __future__ import annotations
@@ -23,17 +23,17 @@ import pandas as pd
 
 from . import config
 
-# (métrique qualité, ascending) — ascending=True : "plus bas = mieux"
+# (quality metric, ascending) — ascending=True: "lower is better"
 QUALITY_SPECS = [
-    ("ROCE", False),        # plus haut = mieux
+    ("ROCE", False),        # higher is better
     ("ROE", False),
     ("OM", False),
-    ("NetD/OIBDP", True),   # plus bas = mieux (moins de dette)
+    ("NetD/OIBDP", True),   # lower is better (less debt)
 ]
 
 
 def add_valuation(df: pd.DataFrame) -> pd.DataFrame:
-    """2.3  Variables de valorisation : B/M ajusté intangibles -> signal_raw."""
+    """2.3  Valuation variables: intangible-adjusted B/M -> signal_raw."""
     df = df.copy()
     df["Market Cap"] = df["prc"].abs() * df["shrout"] / 1_000
     df["net_debt"] = (
@@ -48,7 +48,7 @@ def add_valuation(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_sector_value_rank(df: pd.DataFrame) -> pd.DataFrame:
-    """2.4  Rank value intra-secteur (fallback global pour petits secteurs)."""
+    """2.4  Intra-sector value rank (global fallback for small sectors)."""
     df = df.copy()
     df["sector"] = (df["siccd"] // 100).astype("Int64")
 
@@ -71,7 +71,7 @@ def add_sector_value_rank(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_quality_ratios(df: pd.DataFrame) -> pd.DataFrame:
-    """2.5  Ratios de qualité fondamentale (ROCE, ROE, OM, levier, multiples)."""
+    """2.5  Fundamental quality ratios (ROCE, ROE, OM, leverage, multiples)."""
     df = df.copy()
     capital_employed = (
         df["at"] - df["lct"] + df["KC"].fillna(0) + df["OC"].fillna(0)
@@ -87,7 +87,7 @@ def add_quality_ratios(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def filter_small_mid(df: pd.DataFrame) -> pd.DataFrame:
-    """2.6  Univers small/mid caps + winsorisation économique des outliers."""
+    """2.6  Small/mid cap universe + economic winsorization of outliers."""
     sm = df.loc[
         (df["Market Cap"] >= config.SMALL_MID_MIN_MCAP)
         & (df["Market Cap"] < config.SMALL_MID_MAX_MCAP)
@@ -102,7 +102,7 @@ def filter_small_mid(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_momentum(panel_sm: pd.DataFrame) -> pd.DataFrame:
-    """2.7  Momentum 6 mois (cumul t-6..t-2, skip-2) sur l'univers small/mid."""
+    """2.7  6-month momentum (cumul t-6..t-2, skip-2) on the small/mid universe."""
     panel_sm = panel_sm.sort_values(["permno", "date"]).copy()
     panel_sm["mom_6m"] = panel_sm.groupby("permno")["ret"].transform(
         lambda x: (1 + x.shift(2)).rolling(5).apply(np.prod, raw=True) - 1
@@ -111,7 +111,7 @@ def add_momentum(panel_sm: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_quality_score(value: pd.DataFrame) -> pd.DataFrame:
-    """2.8  Score qualité composite (moyenne des rangs percentiles)."""
+    """2.8  Composite quality score (mean of percentile ranks)."""
     value = value.copy()
     rank_cols = []
     for col, ascending in QUALITY_SPECS:
@@ -127,18 +127,18 @@ def add_quality_score(value: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_signals(panel: pd.DataFrame, start: str, end: str):
-    """Pipeline complet de signaux sur une fenêtre [start, end].
+    """Full signal pipeline over a [start, end] window.
 
     Returns
     -------
-    panel_sm : univers small/mid avec momentum (support rendements/coûts).
-    panel_filtered : univers final éligible (extrêmes value/growth, n_quality>=2).
+    panel_sm : small/mid universe with momentum (support for returns/costs).
+    panel_filtered : final eligible universe (value/growth extremes, n_quality>=2).
     """
     window = panel[(panel["date"] >= start) & (panel["date"] <= end)].copy()
     window["date"] = pd.to_datetime(window["date"])
     window = window.sort_values(["permno", "date"]).reset_index(drop=True)
-    print(f"Panel {start[:4]}-{end[:4]} : {window.shape[0]:,} obs — "
-          f"{window['permno'].nunique():,} titres")
+    print(f"Panel {start[:4]}-{end[:4]}: {window.shape[0]:,} obs — "
+          f"{window['permno'].nunique():,} stocks")
 
     window = add_valuation(window)
     window = add_sector_value_rank(window)
@@ -146,7 +146,7 @@ def build_signals(panel: pd.DataFrame, start: str, end: str):
 
     panel_sm = filter_small_mid(window)
 
-    # Univers investissable (signal value + prix > 1$ anti penny stocks)
+    # Investable universe (value signal + price > $1 anti penny stocks)
     base_mask = (
         panel_sm["BM_rank"].notna()
         & panel_sm["signal_raw"].notna()
@@ -155,7 +155,7 @@ def build_signals(panel: pd.DataFrame, start: str, end: str):
         & panel_sm["prc"].abs().gt(1)
     )
     value = panel_sm.loc[base_mask].copy()
-    print(f"Univers investissable : {value['permno'].nunique():,} titres uniques")
+    print(f"Investable universe: {value['permno'].nunique():,} unique stocks")
 
     panel_sm = add_momentum(panel_sm)
     value = value.merge(
@@ -170,5 +170,5 @@ def build_signals(panel: pd.DataFrame, start: str, end: str):
         (value["long_eligible"] | value["short_eligible"])
         & (value["n_quality"] >= 2)
     ].copy()
-    print(f"Univers filtré : {panel_filtered['permno'].nunique():,} titres")
+    print(f"Filtered universe: {panel_filtered['permno'].nunique():,} stocks")
     return panel_sm, panel_filtered

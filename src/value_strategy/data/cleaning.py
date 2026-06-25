@@ -1,13 +1,12 @@
-"""1.8  Nettoyage des variables, illiquidité Amihud et coûts dynamiques.
+"""1.8  Variable cleaning, Amihud illiquidity and dynamic costs.
 
-Le nettoyage dépend de la variable. Pour xrd, capx, dp, txt, xint un manquant
-vaut zéro (pas de dépense). Les dettes (dltt, dlc, lct) sont lissées puis
-mises à zéro. Pour oibdp et oancf on exclut les firmes entièrement manquantes
-avant de combler. xsga est reconstruit via revt - cogs - oibdp quand c'est
-possible.
+Cleaning depends on the variable. For xrd, capx, dp, txt, xint a missing value
+means zero (no spending). Debts (dltt, dlc, lct) are smoothed then set to zero.
+For oibdp and oancf, fully-missing firms are dropped before filling. xsga is
+reconstructed via revt - cogs - oibdp when possible.
 
-Vient ensuite l'illiquidité d'Amihud mensuelle, puis une grille de coûts de
-transaction par seuils cross-sectionnels.
+Then comes the monthly Amihud illiquidity, followed by a grid of transaction
+costs based on cross-sectional thresholds.
 """
 
 from __future__ import annotations
@@ -17,20 +16,20 @@ import pandas as pd
 
 
 def clean_variables(panel: pd.DataFrame) -> pd.DataFrame:
-    """Nettoie les variables comptables du panel (cellule 1.8)."""
+    """Clean the accounting variables of the panel (cell 1.8)."""
     panel = panel.copy()
 
-    # Variables où l'absence signifie zéro
+    # Variables where a missing value means zero
     for col in ["xrd", "capx", "dp", "txt", "xint"]:
         panel[col] = panel[col].fillna(0)
 
-    # Dettes et passif courant : lissage puis zéro
+    # Debt and current liabilities: smoothing then zero
     for col in ["dltt", "dlc", "lct"]:
         panel[col] = panel.groupby("gvkey")[col].transform(
             lambda x: x.ffill().bfill().fillna(0)
         )
 
-    # OIBDP : exclure firmes totalement manquantes
+    # OIBDP: drop fully-missing firms
     pct_oibdp = panel.groupby("gvkey")["oibdp"].apply(lambda x: x.isna().mean())
     gvkeys_oibdp_ok = pct_oibdp[pct_oibdp < 1.0].index
     panel = panel[panel["gvkey"].isin(gvkeys_oibdp_ok)].copy()
@@ -38,7 +37,7 @@ def clean_variables(panel: pd.DataFrame) -> pd.DataFrame:
         lambda x: x.ffill().bfill()
     )
 
-    # OANCF : exclure firmes totalement manquantes (majoritairement banques)
+    # OANCF: drop fully-missing firms (mostly banks)
     pct_oancf = panel.groupby("gvkey")["oancf"].apply(lambda x: x.isna().mean())
     gvkeys_oancf_ok = pct_oancf[pct_oancf < 1.0].index
     panel = panel[panel["gvkey"].isin(gvkeys_oancf_ok)].copy()
@@ -46,7 +45,7 @@ def clean_variables(panel: pd.DataFrame) -> pd.DataFrame:
         lambda x: x.ffill().bfill()
     )
 
-    # XSGA : reconstruction si manquant
+    # XSGA: reconstruct if missing
     mask_xsga = panel["xsga"] == 0
     panel.loc[mask_xsga, "xsga"] = (
         panel.loc[mask_xsga, "revt"]
@@ -54,21 +53,21 @@ def clean_variables(panel: pd.DataFrame) -> pd.DataFrame:
         - panel.loc[mask_xsga, "oibdp"]
     ).clip(lower=0)
 
-    print(f"Panel nettoyé : {panel.shape[0]:,} obs — {panel['permno'].nunique():,} titres")
+    print(f"Cleaned panel: {panel.shape[0]:,} obs — {panel['permno'].nunique():,} stocks")
     return panel
 
 
 def add_illiquidity_costs(panel: pd.DataFrame) -> pd.DataFrame:
-    """Illiquidité d'Amihud mensuelle et coût de transaction dynamique.
+    """Monthly Amihud illiquidity and dynamic transaction cost.
 
-    Le coût ``tc_stock`` est attribué par seuils cross-sectionnels (30 %/70 %)
-    de l'illiquidité : 5 bp (liquide), 15 bp (médian), 30 bp (illiquide).
+    The ``tc_stock`` cost is assigned via cross-sectional thresholds (30%/70%)
+    of illiquidity: 5 bp (liquid), 15 bp (median), 30 bp (illiquid).
     """
     panel = panel.copy()
     panel["date"] = pd.to_datetime(panel["date"])
     panel = panel.sort_values(["permno", "date"])
 
-    # Amihud mensuel = |ret| / volume dollar mensuel
+    # Monthly Amihud = |ret| / monthly dollar volume
     panel["amihud_monthly"] = (
         panel["ret"].astype(float).abs()
         / panel["dollar_vol_monthly_m"].astype(float)
@@ -78,7 +77,7 @@ def add_illiquidity_costs(panel: pd.DataFrame) -> pd.DataFrame:
     )
     panel["amihud_used"] = panel["amihud_monthly"].astype(float)
 
-    # Seuils cross-sectionnels par date
+    # Cross-sectional thresholds per date
     panel["low_thresh"] = panel.groupby("date")["amihud_used"].transform(
         lambda x: x.quantile(0.30)
     ).astype(float)
@@ -100,7 +99,7 @@ def add_illiquidity_costs(panel: pd.DataFrame) -> pd.DataFrame:
     )
 
     tc_universe_monthly = panel.groupby("date")["tc_stock"].mean().sort_index()
-    print(f"Coût TC moyen univers : {tc_universe_monthly.mean():.4f} = "
+    print(f"Avg universe TC cost: {tc_universe_monthly.mean():.4f} = "
           f"{tc_universe_monthly.mean() * 100:.2f}%")
-    print(f"Panel final : {panel.shape[0]:,} obs — {panel['permno'].nunique():,} titres")
+    print(f"Final panel: {panel.shape[0]:,} obs — {panel['permno'].nunique():,} stocks")
     return panel

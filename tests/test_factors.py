@@ -1,4 +1,4 @@
-"""Tests des statistiques de performance (sans réseau ni WRDS)."""
+"""Tests of the performance statistics (no network, no WRDS)."""
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,7 @@ def test_performance_stats_short_series_returns_nan():
 def test_compute_metrics_sharpe_positive_for_positive_drift():
     s = _series(mean=0.02, vol=0.03, seed=1)
     m = factors.compute_metrics(s)
-    assert m["N mois"] == 120
+    assert m["N months"] == 120
     assert m["Sharpe"] > 0
     assert 0 <= m["Hit Rate"] <= 1
 
@@ -39,4 +39,4 @@ def test_sharpe_uses_excess_return_when_rf_given():
     rf = pd.Series(0.005, index=s.index)
     sharpe_no_rf = factors.compute_metrics(s)["Sharpe"]
     sharpe_rf = factors.compute_metrics(s, rf_series=rf)["Sharpe"]
-    assert sharpe_rf < sharpe_no_rf  # retrancher le RF réduit le Sharpe
+    assert sharpe_rf < sharpe_no_rf  # subtracting the RF lowers the Sharpe

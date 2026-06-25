@@ -1,8 +1,8 @@
-"""4.3  Prédiction supervisée — walk-forward validation V3.
+"""4.3  Supervised prediction — walk-forward validation V3.
 
-Expanding window : entraînement sur tout le passé, test sur les 12 mois
-suivants (pas de look-ahead). Seuil de décision optimisé (F1) sur le train.
-Modèles : Logistic Regression + Gradient Boosting (XGBoost si disponible).
+Expanding window: train on all the past, test on the next 12 months (no
+look-ahead). Decision threshold optimized (F1) on the train set.
+Models: Logistic Regression + Gradient Boosting (XGBoost if available).
 """
 
 from __future__ import annotations
@@ -18,22 +18,22 @@ from . import HAS_XGB
 
 
 def prepare_supervised_data(mkt_df, feature_cols):
-    """Prépare le dataset supervisé : target = régime à t+1."""
-    print("[STEP 3a] Préparation données supervisées...")
+    """Prepare the supervised dataset: target = regime at t+1."""
+    print("[STEP 3a] Preparing supervised data...")
     df = mkt_df.copy().sort_values("date").reset_index(drop=True)
     df["target"] = df["regime"].shift(-1)
     df[feature_cols] = df[feature_cols].ffill().bfill().fillna(0)
     df[feature_cols] = df[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0)
     df = df.dropna(subset=["target"]).reset_index(drop=True)
     df["target"] = df["target"].astype(int)
-    print(f"  Samples : {len(df)} | Stress : {df['target'].mean():.1%} | "
-          f"Période : {df['date'].min().strftime('%Y-%m')} → "
+    print(f"  Samples: {len(df)} | Stress: {df['target'].mean():.1%} | "
+          f"Period: {df['date'].min().strftime('%Y-%m')} -> "
           f"{df['date'].max().strftime('%Y-%m')}")
     return df
 
 
 def find_optimal_threshold(y_true, y_prob):
-    """Seuil qui maximise le F1 sur les données fournies."""
+    """Threshold that maximizes F1 on the provided data."""
     precision, recall, thresholds = precision_recall_curve(y_true, y_prob)
     f1 = 2 * (precision * recall) / (precision + recall + 1e-10)
     best_idx = np.argmax(f1)
@@ -41,7 +41,7 @@ def find_optimal_threshold(y_true, y_prob):
 
 
 def walk_forward_validation_v3(df, feature_cols, min_train=120, test_window=12):
-    """Walk-forward expanding window avec seuil adaptatif.
+    """Walk-forward expanding window with an adaptive threshold.
 
     Returns
     -------
@@ -52,7 +52,7 @@ def walk_forward_validation_v3(df, feature_cols, min_train=120, test_window=12):
           f"(min_train={min_train}, test={test_window}, n={n})...")
 
     if min_train >= n:
-        print(f"  ✗ ERREUR : min_train ({min_train}) ≥ n ({n}).")
+        print(f"  x ERROR: min_train ({min_train}) >= n ({n}).")
         empty = pd.DataFrame(columns=[
             "date", "y_true", "lr_pred", "lr_prob", "gb_pred", "gb_prob", "fold",
         ])
@@ -75,7 +75,7 @@ def walk_forward_validation_v3(df, feature_cols, min_train=120, test_window=12):
         y_train = train_df["target"].values
         y_test = test_df["target"].values
 
-        if len(np.unique(y_train)) < 2:        # une seule classe -> skip
+        if len(np.unique(y_train)) < 2:        # a single class -> skip
             train_end += test_window
             continue
 
@@ -118,6 +118,6 @@ def walk_forward_validation_v3(df, feature_cols, min_train=120, test_window=12):
     if len(results_df) > 0:
         results_df["date"] = pd.to_datetime(results_df["date"])
     avg_threshold = np.mean(thresholds) if thresholds else 0.5
-    print(f"  Folds : {fold} | OOS : {len(results_df)} | "
-          f"Seuil moyen : {avg_threshold:.3f}")
+    print(f"  Folds: {fold} | OOS: {len(results_df)} | "
+          f"Avg threshold: {avg_threshold:.3f}")
     return results_df, lr, gb, scaler, avg_threshold

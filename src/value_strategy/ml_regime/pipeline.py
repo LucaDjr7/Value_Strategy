@@ -1,8 +1,8 @@
-"""Orchestration de la Partie 4 (détection ML des régimes).
+"""Orchestration of Part 4 (ML regime detection).
 
-``run_ml_regime`` enchaîne features -> labeling -> walk-forward -> évaluation
--> signaux, et renvoie tous les artefacts nécessaires aux graphiques (Partie 4)
-et au short dynamique (Partie 5).
+``run_ml_regime`` chains features -> labeling -> walk-forward -> evaluation
+-> signals, and returns all the artifacts needed by the charts (Part 4) and by
+the dynamic short (Part 5).
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from .signals import generate_signals_v3
 
 
 def run_ml_regime(crsp_ml: pd.DataFrame, comp: pd.DataFrame, macro: pd.DataFrame) -> dict:
-    """Exécute la détection de régime complète et renvoie un dict d'artefacts."""
+    """Run the full regime detection and return a dict of artifacts."""
     print("=" * 60)
-    print("  PARTIE 4 — DÉTECTION DE RÉGIME (ML)")
+    print("  PART 4 — REGIME DETECTION (ML)")
     print("=" * 60)
 
     mkt_df, feature_cols = compute_liquidity_features_v3(crsp_ml, comp, macro)
@@ -43,12 +43,12 @@ def run_ml_regime(crsp_ml: pd.DataFrame, comp: pd.DataFrame, macro: pd.DataFrame
     signals_df = generate_signals_v3(results_df, avg_threshold)
 
     print("\n" + "=" * 60)
-    print("  RÉSUMÉ PARTIE 4 — DÉTECTION EUPHORIA")
+    print("  PART 4 SUMMARY — EUPHORIA DETECTION")
     print("=" * 60)
-    print(f"  Méthode régime   : {regime_method} + smoothing")
-    print(f"  Features totales : {len(feature_cols)}")
-    print(f"  Panel ML         : {mkt_df.shape[0]} mois")
-    print(f"  Seuil moyen      : {avg_threshold:.3f}")
+    print(f"  Regime method  : {regime_method} + smoothing")
+    print(f"  Total features : {len(feature_cols)}")
+    print(f"  ML panel       : {mkt_df.shape[0]} months")
+    print(f"  Avg threshold  : {avg_threshold:.3f}")
 
     return {
         "mkt_df": mkt_df,

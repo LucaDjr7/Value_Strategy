@@ -1,11 +1,11 @@
-"""Partie 4 — Détection ML des régimes "junk rally" (euphoria).
+"""Part 4 — ML detection of "junk rally" (euphoria) regimes.
 
-Le pipeline enchaîne le feature engineering (CRSP, Compustat, FRED), le
-labeling HMM/GMM des régimes, la prédiction supervisée en walk-forward,
-l'évaluation, puis la génération des signaux SHORT_REDUCE / FULL_SHORT.
+The pipeline chains feature engineering (CRSP, Compustat, FRED), HMM/GMM regime
+labeling, supervised walk-forward prediction, evaluation, and then the
+generation of the SHORT_REDUCE / FULL_SHORT signals.
 
-hmmlearn et xgboost sont optionnels : à défaut, on retombe respectivement sur
-GaussianMixture et GradientBoostingClassifier de scikit-learn.
+hmmlearn and xgboost are optional: without them, the code falls back to
+GaussianMixture and GradientBoostingClassifier from scikit-learn respectively.
 """
 
 try:

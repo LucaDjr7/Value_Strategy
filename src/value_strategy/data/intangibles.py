@@ -1,14 +1,14 @@
-"""1.7  Calcul KC / OC — Peters & Taylor (2017).
+"""1.7  KC / OC computation — Peters & Taylor (2017).
 
-Knowledge Capital (KC) : R&D capitalisée, δ = 15 %/an
-    KC_t = (1 − 0.15) × KC_{t−1} + XRD_t   ;  KC_0 = XRD_0 / (0.15 + g)
+Knowledge Capital (KC): capitalized R&D, delta = 15%/year
+    KC_t = (1 - 0.15) * KC_{t-1} + XRD_t   ;  KC_0 = XRD_0 / (0.15 + g)
 
-Organization Capital (OC) : SG&A capitalisée à 30 %, δ = 20 %/an
-    OC_t = (1 − 0.20) × OC_{t−1} + 0.30 × XSGA_t  ;  OC_0 = 0.30·XSGA_0 / (0.20 + g)
+Organization Capital (OC): SG&A capitalized at 30%, delta = 20%/year
+    OC_t = (1 - 0.20) * OC_{t-1} + 0.30 * XSGA_t  ;  OC_0 = 0.30*XSGA_0 / (0.20 + g)
 
-Intuition : les dépenses R&D et marketing créent des actifs immatériels hors
-bilan. En les capitalisant, on corrige le book-to-market pour les économies
-modernes (tech, pharma) où ces actifs forment une large part de la valeur.
+Intuition: R&D and marketing spending create off-balance-sheet intangible
+assets. Capitalizing them corrects the book-to-market for modern economies
+(tech, pharma) where these assets make up a large share of value.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def _compute_oc(group: pd.DataFrame, dep: float, frac: float) -> pd.DataFrame:
 
 
 def add_intangibles(panel: pd.DataFrame) -> pd.DataFrame:
-    """Ajoute les colonnes KC et OC au panel mensuel."""
+    """Add the KC and OC columns to the monthly panel."""
     panel = panel.copy()
     panel["xrd"] = panel["xrd"].fillna(0)
     panel["xsga"] = panel["xsga"].fillna(0)
@@ -74,17 +74,17 @@ def add_intangibles(panel: pd.DataFrame) -> pd.DataFrame:
         .copy()
     )
 
-    print("Calcul KC...")
+    print("Computing KC...")
     comp_annual = comp_annual.groupby("gvkey", group_keys=False).apply(
         _compute_kc, dep=config.KC_DEPRECIATION,
     )
-    print("Calcul OC...")
+    print("Computing OC...")
     comp_annual = comp_annual.groupby("gvkey", group_keys=False).apply(
         _compute_oc, dep=config.OC_DEPRECIATION, frac=config.OC_CAPITALIZED_FRACTION,
     )
 
-    print(f"KC médian : {comp_annual['KC'].median():.1f}M")
-    print(f"OC médian : {comp_annual['OC'].median():.1f}M")
+    print(f"Median KC: {comp_annual['KC'].median():.1f}M")
+    print(f"Median OC: {comp_annual['OC'].median():.1f}M")
 
     panel = panel.merge(
         comp_annual[["gvkey", "fyear", "KC", "OC"]],

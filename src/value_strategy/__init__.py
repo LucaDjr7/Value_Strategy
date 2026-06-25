@@ -1,12 +1,12 @@
-"""Stratégie long/short equity value, qualité, momentum, avec détection ML.
+"""Long/short equity value, quality, momentum strategy, with ML detection.
 
-Le pipeline suit cinq parties (détaillées dans le README) : la couche data
-(extraction WRDS, panel mensuel, intangibles, nettoyage), les signaux (value
-sectoriel, qualité, momentum), le portefeuille (construction long/short et
-performance nette), la détection de régime (ml_regime) et le short dynamique.
+The pipeline follows five parts (detailed in the README): the data layer (WRDS
+extraction, monthly panel, intangibles, cleaning), the signals (sector value,
+quality, momentum), the portfolio (long/short construction and net
+performance), the regime detection (ml_regime) and the dynamic short.
 
-Les sous-modules qui tirent des dépendances lourdes (WRDS, matplotlib) sont
-importés à la demande, pour qu'un simple `import value_strategy` reste léger.
+Sub-modules that pull heavy dependencies (WRDS, matplotlib) are imported on
+demand, so that a plain `import value_strategy` stays lightweight.
 """
 
 from . import config

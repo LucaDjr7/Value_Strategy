@@ -1,13 +1,13 @@
-"""Partie 2/3 — Construction des portefeuilles L/S et performance nette.
+"""Part 2/3 — L/S portfolio construction and net performance.
 
-Construction (semestrielle, juin/décembre) :
-  LONG  : ENTRÉE   = value + qualité + momentum positif
-          MAINTIEN = value + qualité (momentum ignoré)
-          SORTIE   = plus value, qualité dégradée, séjour > 3 ans, détresse
-  SHORT : bottom 25 % score qualité parmi growth (bottom 20 % B/M)
+Construction (semi-annual, June/December):
+  LONG  : ENTRY     = value + quality + positive momentum
+          HOLD      = value + quality (momentum ignored)
+          EXIT      = no longer value, degraded quality, tenure > 3 years, distress
+  SHORT : bottom 25% quality score among growth (bottom 20% B/M)
 
-Performance : rendement mensuel equal-weighted, net des coûts de transaction
-dynamiques (Amihud) et du borrow fee sur le short.
+Performance: equal-weighted monthly return, net of dynamic transaction costs
+(Amihud) and the borrow fee on the short.
 """
 
 from __future__ import annotations
@@ -19,15 +19,15 @@ from . import config
 
 
 # ----------------------------------------------------------------------------
-# Construction des portefeuilles
+# Portfolio construction
 # ----------------------------------------------------------------------------
 def construct_portfolios(panel_filtered: pd.DataFrame, start: str, end: str):
-    """Construit les snapshots long/short à chaque date de rebalancement.
+    """Build the long/short snapshots at each rebalancing date.
 
     Returns
     -------
     long_snapshots, short_snapshots : dict {date -> set(permno)}
-    rebal_dates : liste triée des dates de rebalancement.
+    rebal_dates : sorted list of rebalancing dates.
     """
     rebal_dates = sorted([
         d for d in panel_filtered["date"].unique()
@@ -35,7 +35,7 @@ def construct_portfolios(panel_filtered: pd.DataFrame, start: str, end: str):
         and d.month in config.REBAL_MONTHS
     ])
 
-    # Permnos à momentum positif par date (filtre d'entrée uniquement)
+    # Permnos with positive momentum per date (entry filter only)
     mom_by_date = {}
     for d, grp in panel_filtered.groupby("date"):
         mom_by_date[d] = set(grp.loc[grp["mom_6m"] > 0, "permno"])
@@ -49,7 +49,7 @@ def construct_portfolios(panel_filtered: pd.DataFrame, start: str, end: str):
         mom_ok = mom_by_date.get(d, set())
         d_prev = rebal_dates[idx - 1] if idx > 0 else None
 
-        # ── Nouveaux entrants : value + momentum positif + qualité suffisante
+        # -- New entrants: value + positive momentum + sufficient quality
         nouveaux = set(
             snap.loc[
                 snap["long_eligible"]
@@ -59,23 +59,23 @@ def construct_portfolios(panel_filtered: pd.DataFrame, start: str, end: str):
             ].index
         )
 
-        # ── Titres maintenus : momentum ignoré, sortie sur fondamentaux
+        # -- Held names: momentum ignored, exit on fundamentals
         deja_en_port = long_snapshots.get(d_prev, set()) if d_prev else set()
         maintenus = set()
         for permno in deja_en_port:
-            if permno not in snap.index:          # delisté -> sort
+            if permno not in snap.index:          # delisted -> exit
                 continue
             row = snap.loc[permno]
-            if not row["long_eligible"]:          # plus value -> sort
+            if not row["long_eligible"]:          # no longer value -> exit
                 continue
             if pd.isna(row["score"]) or row["score"] < config.SCORE_MIN_MAINTIEN:
-                continue                          # qualité dégradée -> sort
+                continue                          # degraded quality -> exit
             entry = entry_date_tracker.get(permno, d)
             n_rebals = sum(1 for rd in rebal_dates if entry <= rd <= d)
-            if n_rebals > config.MAX_SEJOUR_REBALS:  # séjour > 3 ans -> sort
+            if n_rebals > config.MAX_SEJOUR_REBALS:  # tenure > 3 years -> exit
                 continue
             if pd.notna(row.get("NetD/OIBDP")) and row["NetD/OIBDP"] > 20:
-                continue                          # détresse -> sort
+                continue                          # distress -> exit
             if pd.notna(row.get("ROCE")) and row["ROCE"] < -0.20:
                 continue
             maintenus.add(permno)
@@ -84,7 +84,7 @@ def construct_portfolios(panel_filtered: pd.DataFrame, start: str, end: str):
         for permno in long_snapshots[d]:
             entry_date_tracker.setdefault(permno, d)
 
-        # ── Short : bottom 25 % qualité parmi le bucket growth
+        # -- Short: bottom 25% quality among the growth bucket
         short_pool = (
             snap.loc[snap["short_eligible"]]["score"]
             .dropna().sort_values(ascending=True)
@@ -94,17 +94,17 @@ def construct_portfolios(panel_filtered: pd.DataFrame, start: str, end: str):
 
     avg_long = np.mean([len(v) for v in long_snapshots.values()])
     avg_short = np.mean([len(v) for v in short_snapshots.values()])
-    print(f"Nb dates rebalancement : {len(rebal_dates)}")
-    print(f"Taille moyenne LONG  : {avg_long:.1f}")
-    print(f"Taille moyenne SHORT : {avg_short:.1f}")
+    print(f"Number of rebalancing dates: {len(rebal_dates)}")
+    print(f"Average LONG size:  {avg_long:.1f}")
+    print(f"Average SHORT size: {avg_short:.1f}")
     return long_snapshots, short_snapshots, rebal_dates
 
 
 # ----------------------------------------------------------------------------
-# Coûts
+# Costs
 # ----------------------------------------------------------------------------
 def estimate_borrow_fee(mcap: float) -> float:
-    """Borrow fee annuel (%) — grille décroissante selon la market cap."""
+    """Annual borrow fee (%) — decreasing grid by market cap."""
     if mcap >= 10_000:
         return 0.30
     elif mcap >= 5_000:
@@ -120,10 +120,10 @@ def estimate_borrow_fee(mcap: float) -> float:
 
 
 def get_tc_dynamic(panel_sm: pd.DataFrame, snapshots_curr: dict) -> pd.Series:
-    """Coût de transaction portfolio-level à chaque rebalancement.
+    """Portfolio-level transaction cost at each rebalancing.
 
-    En equal-weight chaque titre pèse 1/N ; si on trade K titres, le coût total
-    vaut sum(tc_k) / N. Renvoie une Series (date -> coût décimal).
+    Under equal weighting each stock weighs 1/N; if K stocks are traded, the
+    total cost equals sum(tc_k) / N. Returns a Series (date -> decimal cost).
     """
     tc_by_date = {}
     dates = sorted(snapshots_curr.keys())
@@ -145,7 +145,7 @@ def get_tc_dynamic(panel_sm: pd.DataFrame, snapshots_curr: dict) -> pd.Series:
 
 
 def monthly_ew_return(df: pd.DataFrame, pos_label: str) -> pd.Series:
-    """Rendement mensuel equal-weighted des titres d'une position donnée."""
+    """Equal-weighted monthly return of the stocks in a given position."""
     return (
         df.loc[df["position"] == pos_label]
         .dropna(subset=["ret_next"])
@@ -166,16 +166,16 @@ def compute_performance(
     start: str,
     end: str,
 ):
-    """Calcule la performance mensuelle L/S nette de coûts.
+    """Compute the monthly L/S performance net of costs.
 
     Returns
     -------
-    perf : DataFrame indexé par date avec colonnes LONG, SHORT, LS, LS_net.
-    costs : dict des coûts annualisés (trans, borrow, total, mensuel).
+    perf : DataFrame indexed by date with columns LONG, SHORT, LS, LS_net.
+    costs : dict of annualized costs (trans, borrow, total, monthly).
     """
     panel_sm = panel_sm.sort_values(["permno", "date"]).copy()
 
-    # Rendement ajusté delisting
+    # Delisting-adjusted return
     if "dlret" in panel_sm.columns:
         panel_sm["ret_adj"] = panel_sm["ret"].where(
             panel_sm["dlret"].isna(), panel_sm["dlret"]
@@ -210,7 +210,7 @@ def compute_performance(
     ], axis=1).dropna()
     perf["LS"] = perf["LONG"] - perf["SHORT"]
 
-    # Borrow fee — médiane de market cap des shorts -> grille
+    # Borrow fee — median market cap of the shorts -> grid
     short_mcap = pd.concat([
         panel_sm.loc[
             (panel_sm["date"] == d) & (panel_sm["permno"].isin(shorts))
@@ -222,13 +222,13 @@ def compute_performance(
         .apply(estimate_borrow_fee).mean()
     )
 
-    # Coûts de transaction dynamiques
+    # Dynamic transaction costs
     tc_long = get_tc_dynamic(panel_sm, long_snapshots)
     tc_short = get_tc_dynamic(panel_sm, short_snapshots)
     n_years = (pd.Timestamp(end) - pd.Timestamp(start)).days / 365.25
 
-    cout_trans = (tc_long.sum() + tc_short.sum()) / n_years * 100  # décimal -> %
-    cout_borrow = borrow_fee * 0.50                                # déjà en %
+    cout_trans = (tc_long.sum() + tc_short.sum()) / n_years * 100  # decimal -> %
+    cout_borrow = borrow_fee * 0.50                                # already in %
     cout_total = cout_trans + cout_borrow
     cost_monthly = (cout_total / 100) / 12
 
@@ -240,18 +240,18 @@ def compute_performance(
         "total": cout_total,
         "monthly": cost_monthly,
     }
-    print(f"\nPerformance calculée : {len(perf)} mois")
-    print(f"Coût transaction : {cout_trans:.2f}%/an")
-    print(f"Coût borrow      : {cout_borrow:.2f}%/an")
-    print(f"Coût total       : {cout_total:.2f}%/an")
+    print(f"\nPerformance computed: {len(perf)} months")
+    print(f"Transaction cost: {cout_trans:.2f}%/yr")
+    print(f"Borrow cost     : {cout_borrow:.2f}%/yr")
+    print(f"Total cost      : {cout_total:.2f}%/yr")
     return perf, costs
 
 
 # ----------------------------------------------------------------------------
-# Diagnostic — durée de détention moyenne
+# Diagnostic — average holding duration
 # ----------------------------------------------------------------------------
 def holding_durations(snapshots: dict) -> tuple[float, float, int]:
-    """Durée de détention moyenne/médiane (mois) d'un jeu de snapshots."""
+    """Average/median holding duration (months) for a set of snapshots."""
     dates = sorted(snapshots.keys())
     active: dict = {}
     durations = []
